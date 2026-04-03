@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HoopVision - Shot Analyzer v3</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HoopVision">
+<meta name="theme-color" content="#FF5C1A">
+<style>
+:root {
+  --orange:     #FF5C1A;
+  --orange-dim: rgba(255,92,26,0.26);
+  --surface:    #0F0C07;
+  --panel:      #161209;
+  --border:     #2A2215;
+  --text:       #F5E8CC;
+  --text-dim:   #7A6A4A;
+  --green:      #3DFF8F;
+  --yellow:     #FFD23F;
+  --red:        #FF3B5C;
+  --blue:       #3AB4FF;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--surface); color:var(--text); font-family:Arial,sans-serif; min-height:100vh; overflow-x:hidden; }
+header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:100; }
+.logo { font-size:22px; font-weight:900; letter-spacing:3px; }
+.logo span { color:var(--orange); }
+.pills { display:flex; gap:8px; align-items:center; }
+.pill { display:flex; align-items:center; gap:6px; padding:5px 12px; border-radius:100px; border:1px solid var(--border); font-size:11px; color:var(--text-dim); background:var(--surface); font-family:monospace; }
+.dot { width:6px; height:6px; border-radius:50%; background:var(--text-dim); transition:background .3s; }
+.dot.on { background:var(--green); box-shadow:0 0 6px var(--green); }
+.app { display:grid; grid-template-columns:1fr 300px; height:calc(100vh - 55px); }
+.video-zone { display:flex; flex-direction:column; padding:16px; gap:12px; border-right:1px solid var(--border); overflow-y:auto; }
+.vlabel { font-size:10px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase; font-family:monospace; }
+.canvas-wrap { position:relative; background:#000; border-radius:10px; overflow:hidden; border:1px solid var(--border); aspect-ratio:16/9; flex-shrink:0; }
+#mainCanvas { width:100%; height:100%; display:block; }
+.upload-prompt { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; background:#000; cursor:pointer; transition:background .2s; }
+.upload-prompt:hover { background:#0d0d0d; }
+.upload-prompt.hidden { display:none; }
+.up-icon { width:52px; height:52px; border-radius:50%; border:2px dashed var(--orange); display:flex; align-items:center; justify-content:center; font-size:22px; color:var(--orange); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,92,26,.4)} 50%{box-shadow:0 0 0 10px transparent} }
+.up-text { font-size:13px; color:var(--text-dim); }
+.up-sub { font-size:10px; color:var(--text-dim); opacity:.5; font-family:monospace; }
+.bbox-overlay { position:absolute; border:2px solid var(--orange); border-radius:4px; pointer-events:none; display:none; box-shadow:0 0 12px rgba(255,92,26,.3); }
+.bbox-overlay.on { display:block; }
+.bbox-label { position:absolute; top:-22px; left:0; background:var(--orange); color:#000; font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px 4px 0 0; font-family:monospace; }
+.mode-banner { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:var(--orange); color:#000; font-size:11px; font-weight:700; padding:5px 14px; border-radius:100px; pointer-events:none; display:none; white-space:nowrap; font-family:monospace; }
+.mode-banner.on { display:block; }
+.analyzing-overlay { position:absolute; inset:0; background:rgba(0,0,0,.75); display:none; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
+.analyzing-overlay.on { display:flex; }
+.spin { width:46px; height:46px; border-radius:50%; border:3px solid var(--border); border-top-color:var(--orange); animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.spin-text { font-size:11px; color:var(--text-dim); letter-spacing:2px; font-family:monospace; }
+#shotFlash { position:absolute; inset:0; pointer-events:none; border:4px solid transparent; border-radius:10px; opacity:0; transition:opacity .4s; }
+.corner { position:absolute; bottom:8px; right:10px; font-size:9px; color:var(--text-dim); opacity:.4; font-family:monospace; }
+.controls { display:flex; gap:8px; flex-wrap:wrap; }
+#fileInput { display:none; }
+.btn { padding:9px 16px; border-radius:7px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:12px; cursor:pointer; transition:all .15s; }
+.btn:hover { border-color:var(--orange); color:var(--orange); }
+.btn:disabled { opacity:.35; cursor:not-allowed; }
+.btn.primary { background:var(--orange); border-color:var(--orange); color:#000; font-weight:700; }
+.btn.primary:hover { background:#ff7a42; }
+.btn.active { border-color:var(--orange); color:var(--orange); background:var(--orange-dim); }
+.progress-bar { height:3px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:4px; }
+.progress-fill { height:100%; background:var(--orange); border-radius:3px; transition:width .1s; width:0; }
+.conf-row { display:flex; align-items:center; gap:8px; }
+.conf-track { flex:1; height:6px; background:var(--border); border-radius:6px; overflow:hidden; }
+.conf-fill { height:100%; width:0%; background:var(--orange); border-radius:6px; transition:width .12s, background .3s; }
+.signal-chart { height:70px; background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.panel { display:flex; flex-direction:column; overflow-y:auto; background:var(--panel); }
+.psection { padding:16px; border-bottom:1px solid var(--border); }
+.stitle { font-size:10px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase; margin-bottom:12px; font-family:monospace; }
+.player-card { background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.pinfo { display:flex; align-items:center; gap:10px; }
+.pavatar { width:40px; height:40px; border-radius:50%; background:var(--orange-dim); border:2px solid var(--orange); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.pname { font-weight:600; font-size:14px; }
+.psub { font-size:10px; color:var(--text-dim); margin-top:2px; font-family:monospace; }
+.psel-btn { width:100%; padding:8px; border-radius:6px; border:1px dashed var(--orange); background:transparent; color:var(--orange); font-size:10px; letter-spacing:1px; cursor:pointer; transition:all .15s; font-family:monospace; }
+.psel-btn:hover { background:var(--orange-dim); }
+.mgrid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.mcard { background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:10px; transition:border-color .3s; }
+.mcard.on { border-color:var(--orange); }
+.mlabel { font-size:9px; letter-spacing:1.5px; color:var(--text-dim); text-transform:uppercase; font-family:monospace; }
+.mval { font-size:26px; font-weight:900; color:var(--text); line-height:1.1; }
+.mval.good { color:var(--green); }
+.mval.warn { color:var(--yellow); }
+.mval.bad { color:var(--red); }
+.munit { font-size:9px; color:var(--text-dim); font-family:monospace; }
+.shot-log { display:flex; flex-direction:column; gap:5px; }
+.shot-entry { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 10px; display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:8px; animation:slidein .3s forwards; opacity:0; transform:translateX(8px); }
+@keyframes slidein { to { opacity:1; transform:none; } }
+.snum { font-size:11px; color:var(--orange); font-weight:700; font-family:monospace; }
+.smain { font-size:12px; font-weight:600; }
+.smeta { font-size:10px; color:var(--text-dim); font-family:monospace; margin-top:1px; }
+.sscore { font-size:18px; font-weight:900; }
+.sscore.good { color:var(--green); }
+.sscore.warn { color:var(--yellow); }
+.sscore.bad { color:var(--red); }
+.insight-box { background:var(--surface); border:1px solid rgba(255,92,26,.3); border-left:3px solid var(--orange); border-radius:7px; padding:10px 12px; font-size:12px; line-height:1.6; display:none; }
+.insight-box.on { display:block; }
+.empty { text-align:center; padding:20px; color:var(--text-dim); font-size:12px; font-family:monospace; }
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+@media (max-width:768px) { .app { grid-template-columns:1fr; } .panel { height:420px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">HOOP<span>VISION</span></div>
+  <div class="pills">
+    <div class="pill"><div class="dot" id="statusDot"></div><span id="statusText">LISTO</span></div>
+    <div class="pill" id="apiPill" style="color:var(--text-dim)">API...</div>
+  </div>
+</header>
+<div class="app">
+  <div class="video-zone">
+    <div class="vlabel">// VIDEO + CANVAS</div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <video id="vid" style="display:none;position:absolute;width:1px;height:1px;opacity:0" playsinline webkit-playsinline muted preload="auto"></video>
+      <canvas id="mainCanvas"></canvas>
+      <div id="shotFlash"></div>
+      <div class="upload-prompt" id="uploadPrompt" onclick="triggerUpload()">
+        <div class="up-icon">&#11014;</div>
+        <div class="up-text">Tap para subir video</div>
+        <div class="up-sub">MP4 o MOV grabado con iPhone</div>
+      </div>
+      <div class="bbox-overlay" id="bboxOverlay"><div class="bbox-label" id="bboxLabel">JUGADOR</div></div>
+      <div class="mode-banner" id="modeBanner">&#128070; TAP EN EL JUGADOR</div>
+      <div class="analyzing-overlay" id="analyzingOverlay">
+        <div class="spin"></div>
+        <div class="spin-text" id="spinText">ANALIZANDO...</div>
+      </div>
+      <div class="corner">HoopVision v3</div>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <div class="vlabel">PROGRESO</div>
+        <div class="vlabel" id="progressLabel">0%</div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+    <div class="controls">
+      <input type="file" id="fileInput" accept="*/*">
+     <label class="btn" for="fileInput">&#128193; Video<</label>
+      <button class="btn" id="btnSel" onclick="toggleSel()" disabled>&#128070; Jugador</button>
+      <button class="btn primary" id="btnPlay" onclick="togglePlay()" disabled>&#9654; Play</button>
+      <button class="btn" id="btnAnalyze" onclick="runAnalysis()" disabled>&#128202; Analizar</button>
+      <button class="btn" onclick="resetAll()">&#8634; Reset</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between">
+        <div class="vlabel">// CONFIDENCE LIVE</div>
+        <div class="vlabel" id="phaseLabel" style="color:var(--orange)"></div>
+      </div>
+      <div class="conf-row">
+        <div style="font-family:monospace;font-size:10px;color:var(--text-dim);width:32px">CONF</div>
+        <div class="conf-track"><div class="conf-fill" id="confFill"></div></div>
+        <div class="vlabel" id="confPct" style="width:32px;text-align:right">0%</div>
+      </div>
+      <div class="conf-row" style="gap:12px">
+        <div style="font-family:monospace;font-size:10px;color:var(--text-dim)">ANGULO</div>
+        <div style="font-family:monospace;font-size:11px;color:var(--text)" id="elbowLabel">--</div>
+        <div class="vlabel" id="sourceLabel" style="color:var(--blue)">[mock]</div>
+      </div>
+      <div class="signal-chart"><canvas id="signalCanvas"></canvas></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="psection">
+      <div class="stitle">// Jugador</div>
+      <div class="player-card">
+        <div class="pinfo">
+          <div class="pavatar" id="pEmoji">&#127936;</div>
+          <div>
+            <div class="pname" id="pName">Sin seleccionar</div>
+            <div class="psub" id="pSub">Carga video y tap en el jugador</div>
+          </div>
+        </div>
+        <button class="psel-btn" id="pSelBtn" onclick="toggleSel()">TAP PARA SELECCIONAR</button>
+      </div>
+    </div>
+    <div class="psection">
+      <div class="stitle">// Metricas</div>
+      <div class="mgrid">
+        <div class="mcard" id="mcAngle"><div class="mlabel">Codo</div><div class="mval" id="mvAngle">--</div><div class="munit">grados</div></div>
+        <div class="mcard" id="mcTime"><div class="mlabel">Rodilla</div><div class="mval" id="mvTime">--</div><div class="munit">grados</div></div>
+        <div class="mcard on" id="mcShots"><div class="mlabel">Tiros</div><div class="mval good" id="mvShots">0</div><div class="munit">detectados</div></div>
+        <div class="mcard on" id="mcElbow"><div class="mlabel">Codo live</div><div class="mval" id="mvElbow">--</div><div class="munit">deg</div></div>
+      </div>
+    </div>
+    <div class="psection">
+      <div class="stitle">// Insight</div>
+      <div class="insight-box" id="insightBox"><span style="color:var(--orange)">&#128161; </span><span id="insightText"></span></div>
+      <div class="empty" id="insightEmpty">Analiza un video para ver el insight</div>
+    </div>
+    <div class="psection" style="flex:1">
+      <div class="stitle">// Shot Log</div>
+      <div class="shot-log" id="shotLog"><div class="empty">Sin tiros detectados</div></div>
+    </div>
+  </div>
+</div>
+<script>
+var API='https://hoopvision-backend.onrender.com';
+var canvas=document.getElementById('mainCanvas'),ctx=canvas.getContext('2d');
+var sigCvs=document.getElementById('signalCanvas'),sigCtx=sigCvs.getContext('2d');
+var vid=document.getElementById('vid'),fileInp=document.getElementById('fileInput');
+var offCvs=document.createElement('canvas'),offCtx=offCvs.getContext('2d',{willReadFrequently:true});
+var S={loaded:false,selMode:false,hasBbox:false,playerName:'Jugador',bbox:null,shots:[],signals:[],shotCount:0,analyzing:false,currentFile:null};
+var G={y:0.5,t:0,vel:0,conf:0,isPeak:false},ALPHA=0.25;
+function getMockLandmarks(){var t=performance.now()/1000,y=0.5+Math.sin(t*Math.PI)*0.15;return{12:{x:0.60,y:0.60},14:{x:0.65,y:y+0.1},16:{x:0.65,y:y},0:{x:0.60,y:0.50}};}
+function confirmShotWithAI(lm){var source=lm?'real':'mock';lm=lm||getMockLandmarks();var now=performance.now(),dt=Math.max(0.016,(now-G.t)/1000);var sh=lm[12],el=lm[14],wr=lm[16],ey=lm[0];var ang=Math.abs((Math.atan2(wr.y-el.y,wr.x-el.x)-Math.atan2(sh.y-el.y,sh.x-el.x))180/Math.PI);var angFactor=Math.exp(-(ang-115)(ang-115)/(2*35*35));var rawVel=(G.y-wr.y)/dt,smoothVel=ALPHA*rawVel+(1-ALPHA)G.vel;var elevFactor=1/(1+Math.exp(-15(ey.y-wr.y))),velFactor=Math.min(1,Math.max(0,smoothVel/0.5));var raw=elevFactor*0.4+velFactor*0.4+angFactor*0.2,conf=ALPHA*raw+(1-ALPHA)*G.conf;var isShot=conf>0.62&&G.vel>smoothVel&&!G.isPeak;G={y:wr.y,t:now,vel:smoothVel,conf:conf,isPeak:conf>0.62};return{isShot:isShot,elbowAngle:Math.round(ang),confidence:parseFloat(conf.toFixed(3)),source:source};}
+var lockUntil=0;
+function acquireLock(){var now=performance.now();if(now<lockUntil)return false;lockUntil=now+1500;return true;}
+var loopId=null,running=false;
+function startLoop(){if(running)return;running=true;loopId=requestAnimationFrame(analyzeFrame);}
+function stopLoop(){running=false;if(loopId){cancelAnimationFrame(loopId);loopId=null;}}
+function analyzeFrame(){if(!running)return;if(vid.readyState>=2&&vid.videoWidth>0){ctx.drawImage(vid,0,0,canvas.width,canvas.height);if(S.hasBbox)drawBboxLive();}var r=confirmShotWithAI(window._poseData||null);updateLiveUI(r);if(r.isShot&&acquireLock()){S.shotCount++;document.getElementById('mvShots').textContent=S.shotCount;addShotLog(r);flashShot(r.confidence);}loopId=requestAnimationFrame(analyzeFrame);}
+var uiTick=0;
+function updateLiveUI(r){var now=performance.now();if(now-uiTick<80)return;uiTick=now;var pct=Math.round(r.confidence*100),col=r.confidence>0.65?'#3DFF8F':r.confidence>0.35?'#FFD23F':'#7A6A4A';document.getElementById('confFill').style.width=pct+'%';document.getElementById('confFill').style.background=col;document.getElementById('confPct').textContent=pct+'%';document.getElementById('phaseLabel').textContent=r.source==='mock'?'MOCK':'REAL';document.getElementById('elbowLabel').textContent=r.elbowAngle+' deg';document.getElementById('sourceLabel').textContent='['+r.source+']';document.getElementById('mvElbow').textContent=r.elbowAngle;if(canvas.width>100){var hx=Math.max(4,canvas.width-196);ctx.save();ctx.fillStyle='rgba(0,0,0,0.76)';ctx.fillRect(hx,8,188,26);ctx.fillStyle=col;ctx.font='bold 11px monospace';ctx.fillText('CONF '+pct+'%  '+r.elbowAngle+'deg  ['+r.source+']',hx+7,26);ctx.restore();}if(r.confidence>0.3)document.getElementById('statusDot').className='dot on';}
+function addShotLog(r){var log=document.getElementById('shotLog'),empty=log.querySelector('.empty');if(empty)empty.remove();var q=r.confidence>0.78?'good':r.confidence>0.62?'warn':'bad',el=document.createElement('div');el.className='shot-entry';el.innerHTML='<div class="snum">#'+S.shotCount+'</div><div><div class="smain">'+S.playerName+' @ '+vid.currentTime.toFixed(1)+'s</div><div class="smeta">conf '+(r.confidence*100).toFixed(0)+'%  ang '+r.elbowAngle+'deg  ['+r.source+']</div></div><div class="sscore '+q+'">'+(r.confidence*100).toFixed(0)+'%</div>';log.appendChild(el);log.scrollTop=log.scrollHeight;}
+function flashShot(conf){var fl=document.getElementById('shotFlash');fl.style.borderColor=conf>0.85?'#3DFF8F':conf>0.70?'#FFD23F':'#FF3B5C';fl.style.opacity='1';setTimeout(function(){fl.style.opacity='0';},500);}
+function drawBboxLive(){var b=S.bbox;ctx.save();ctx.strokeStyle='#FF5C1A';ctx.lineWidth=2;ctx.shadowColor='#FF5C1A';ctx.shadowBlur=8;ctx.strokeRect(b.px,b.py,b.pw,b.ph);ctx.shadowBlur=0;ctx.font='bold 11px monospace';var lw=ctx.measureText(S.playerName.toUpperCase()).width+12;ctx.fillStyle='#FF5C1A';ctx.fillRect(b.px,b.py-20,lw,18);ctx.fillStyle='#000';ctx.fillText(S.playerName.toUpperCase(),b.px+6,b.py-6);ctx.restore();}
+function triggerUpload(){fileInp.click();}
+fileInp.addEventListener('change',function(e){var f=e.target.files[0];if(f){S.currentFile=f;loadVideo(f);}});
+document.getElementById('canvasWrap').addEventListener('dragover',function(e){e.preventDefault();});
+document.getElementById('canvasWrap').addEventListener('drop',function(e){e.preventDefault();var f=e.dataTransfer.files[0];if(f&&f.type.startsWith('video/')){S.currentFile=f;loadVideo(f);}});
+function loadVideo(file){stopLoop();vid.onerror=vid.onloadedmetadata=vid.oncanplay=vid.onended=null;vid.removeAttribute('src');vid.onerror=function(){setStatus('ERROR - usa MP4 H.264',false);};vid.onended=function(){stopLoop();document.getElementById('btnPlay').innerHTML='&#9654; Play';setStatus('FIN DEL VIDEO',false);};vid.onloadedmetadata=function(){if(vid.videoWidth>0)onVideoReady();};vid.oncanplay=function(){if(!S.loaded&&vid.videoWidth>0)onVideoReady();};vid.src=URL.createObjectURL(file);vid.load();}
+function onVideoReady(){if(S.loaded)return;canvas.width=vid.videoWidth;canvas.height=vid.videoHeight;document.getElementById('uploadPrompt').classList.add('hidden');S.loaded=true;document.getElementById('btnSel').disabled=false;document.getElementById('btnPlay').disabled=false;document.getElementById('btnAnalyze').disabled=false;setStatus('VIDEO LISTO - tap Play',false);setProgress(100);vid.currentTime=0.01;vid.addEventListener('seeked',function drawFirst(){ctx.drawImage(vid,0,0,canvas.width,canvas.height);vid.removeEventListener('seeked',drawFirst);});setTimeout(function(){if(!S.hasBbox)activateSel();},600);}
+canvas.addEventListener('click',function(e){if(S.selMode){var rect=canvas.getBoundingClientRect(),sx=canvas.width/rect.width,sy=canvas.height/rect.height,cx=(e.clientX-rect.left)*sx,cy=(e.clientY-rect.top)*sy;var bw=Math.round(canvas.width*0.08),bh=Math.round(canvas.height*0.18),bx=Math.max(0,Math.min(canvas.width-bw,cx-bw/2)),by=Math.max(0,Math.min(canvas.height-bh,cy-bh/2));S.bbox={px:bx,py:by,pw:bw,ph:bh,xp:bx/canvas.width*100,yp:by/canvas.height*100,wp:bw/canvas.width*100,hp:bh/canvas.height*100};var name=prompt('Nombre del jugador:',S.playerName)||S.playerName;S.playerName=name;S.hasBbox=true;var o=document.getElementById('bboxOverlay');o.style.left=S.bbox.xp+'%';o.style.top=S.bbox.yp+'%';o.style.width=S.bbox.wp+'%';o.style.height=S.bbox.hp+'%';document.getElementById('bboxLabel').textContent=S.playerName.toUpperCase();o.classList.add('on');document.getElementById('pEmoji').textContent='&#127939;';document.getElementById('pName').textContent=S.playerName;document.getElementById('pSub').textContent='Region seleccionada';document.getElementById('pSelBtn').textContent='CAMBIAR JUGADOR';deactivateSel();return;}if(S.loaded)togglePlay();});
+function toggleSel(){if(!S.loaded)return;S.selMode?deactivateSel():activateSel();}
+function activateSel(){S.selMode=true;document.getElementById('modeBanner').classList.add('on');document.getElementById('canvasWrap').style.cursor='crosshair';document.getElementById('btnSel').classList.add('active');document.getElementById('pSelBtn').textContent='CANCELAR';setStatus('TAP EN EL JUGADOR',false);}
+function deactivateSel(){S.selMode=false;document.getElementById('modeBanner').classList.remove('on');document.getElementById('canvasWrap').style.cursor='default';document.getElementById('btnSel').classList.remove('active');document.getElementById('pSelBtn').textContent=S.hasBbox?'CAMBIAR JUGADOR':'TAP PARA SELECCIONAR';setStatus(S.hasBbox?'JUGADOR LISTO':'VIDEO LISTO',S.hasBbox);}
+function togglePlay(){if(!S.loaded)return;var btn=document.getElementById('btnPlay');if(vid.paused){vid.play().catch(function(err){console.log('play blocked:',err);});startLoop();btn.innerHTML='&#9646;&#9646; Pause';setStatus('DETECTANDO TIROS...',true);}else{vid.pause();stopLoop();btn.innerHTML='&#9654; Play';setStatus('PAUSADO',false);}}
+function drawSignal(sigs){var w=sigCvs.offsetWidth||400,h=sigCvs.offsetHeight||70;sigCvs.width=w;sigCvs.height=h;sigCtx.clearRect(0,0,w,h);if(sigs.length<2)return;var maxT=sigs[sigs.length-1].t,px=function(s){return s.t/maxT*w;},py=function(s){return h-s.v*h*0.82-4;};var g=sigCtx.createLinearGradient(0,0,0,h);g.addColorStop(0,'rgba(255,92,26,.4)');g.addColorStop(1,'rgba(255,92,26,0)');sigCtx.beginPath();sigCtx.moveTo(0,h);sigs.forEach(function(s){sigCtx.lineTo(px(s),py(s));});sigCtx.lineTo(w,h);sigCtx.fillStyle=g;sigCtx.fill();sigCtx.beginPath();sigs.forEach(function(s,i){i===0?sigCtx.moveTo(px(s),py(s)):sigCtx.lineTo(px(s),py(s));});sigCtx.strokeStyle='#FF5C1A';sigCtx.lineWidth=2;sigCtx.stroke();}
+function seekTo(t){return new Promise(function(res){vid.currentTime=t;var fn=function(){vid.removeEventListener('seeked',fn);res();};vid.addEventListener('seeked',fn);});}
+function grabBbox(){var b=S.bbox;offCvs.width=b.pw;offCvs.height=b.ph;offCtx.drawImage(vid,b.px,b.py,b.pw,b.ph,0,0,b.pw,b.ph);return offCtx.getImageData(0,0,b.pw,b.ph);}
+function motionDiff(a,b){var d=0,len=a.data.length;for(var i=0;i<len;i+=16)d+=Math.abs(a.data[i]-b.data[i]);return d/(len/16*255);}
+async function runAnalysis(){if(!S.loaded)return;if(!S.hasBbox){alert('Selecciona al jugador primero');return;}stopLoop();if(S.currentFile){try{var r=await fetch(API+'/health',{signal:AbortSignal.timeout(2000)});if(r.ok){await runBackendAnalysis();return;}}catch(e){}}await runLocalAnalysis();}
+async function runBackendAnalysis(){S.analyzing=true;document.getElementById('shotLog').innerHTML='';document.getElementById('analyzingOverlay').classList.add('on');document.getElementById('spinText').textContent='SUBIENDO AL BACKEND...';document.getElementById('btnAnalyze').disabled=true;setStatus('ANALIZANDO CON YOLO...',true);try{var form=new FormData();form.append('file',S.currentFile);form.append('player_x',(S.bbox.xp/100).toString());form.append('player_y',(S.bbox.yp/100).toString());setProgress(20);var res=await fetch(API+'/upload',{method:'POST',body:form}),data=await res.json();setProgress(100);renderBackendShots(data);setStatus(data.total+' EVENTO(S) [YOLO]',true);}catch(e){setStatus('Backend fallo, usando local',false);await runLocalAnalysis();}finally{S.analyzing=false;document.getElementById('analyzingOverlay').classList.remove('on');document.getElementById('btnAnalyze').disabled=false;}}
+function renderBackendShots(data){var log=document.getElementById('shotLog');log.innerHTML='';document.getElementById('mvShots').textContent=data.total||0;document.getElementById('mcShots').classList.add('on');if(!data.events||!data.events.length){log.innerHTML='<div class="empty">Sin eventos detectados</div>';}else{data.events.forEach(function(ev,i){var el=document.createElement('div');el.className='shot-entry';var q=ev.quality||'warn';el.innerHTML='<div class="snum">#'+(i+1)+'</div><div><div class="smain">'+S.playerName+' @ '+ev.t+'s</div><div class="smeta">ang '+ev.angle+'deg  rise '+ev.rise+'  [mediapipe]</div></div><div class="sscore '+q+'">'+ev.angle+'°</div>';log.appendChild(el);});}
+// Biomechanics panel
+var bio=data.biomechanics;if(bio){var ea=bio.elbow_angle_mean,ka=bio.knee_angle_mean;document.getElementById('mvAngle').textContent=ea?Math.round(ea):'--';document.getElementById('mvAngle').className='mval'+(ea>=80&&ea<=120?' good':ea?' warn':'');document.getElementById('mvTime').textContent=ka?Math.round(ka):'--';document.getElementById('mcAngle').classList.add('on');document.getElementById('mcTime').classList.add('on');// Coaching insight
+var txt='';if(bio.elbow_coaching)txt+=bio.elbow_coaching+' ';if(bio.knee_coaching)txt+=bio.knee_coaching+' ';if(bio.wrist_coaching)txt+=bio.wrist_coaching;document.getElementById('insightText').textContent=txt||data.total+' tiros detectados.';document.getElementById('insightBox').classList.add('on');document.getElementById('insightEmpty').style.display='none';}else{document.getElementById('insightText').textContent=data.total+' eventos detectados por MediaPipe en el video de '+S.playerName+'.';document.getElementById('insightBox').classList.add('on');document.getElementById('insightEmpty').style.display='none';}}
+async function runLocalAnalysis(){S.analyzing=true;S.shots=[];S.signals=[];document.getElementById('shotLog').innerHTML='';document.getElementById('analyzingOverlay').classList.add('on');document.getElementById('spinText').textContent='ANALIZANDO LOCAL...';document.getElementById('btnAnalyze').disabled=true;setStatus('ANALIZANDO...',true);var dur=vid.duration||10,NF=Math.min(Math.floor(dur*5),300),step=dur/NF;await seekTo(0);var prev=grabBbox(),sigs=[];for(var i=1;i<NF;i++){await seekTo(i*step);var curr=grabBbox();sigs.push({t:i*step,v:motionDiff(curr,prev)});prev=curr;setProgress(Math.round(i/NF*80));drawSignal(sigs);}var vals=sigs.map(function(s){return s.v;}),minV=Math.min.apply(null,vals),rng=Math.max.apply(null,vals)-minV||1;var norm=sigs.map(function(s){return{t:s.t,v:(s.v-minV)/rng};});S.signals=norm;drawSignal(norm);var nv=norm.map(function(s){return s.v;}),mean=nv.reduce(function(a,b){return a+b;},0)/nv.length;var std=Math.sqrt(nv.reduce(function(s,v){return s+(v-mean)*(v-mean);},0)/nv.length);var RT=Math.min(mean+std*0.8,0.55),FT=mean+std*0.3,GAP=1.2;var phase='idle',rS=0,pkV=0,pkT=0,lastT=-GAP,pS=0,shots=[];for(var j=0;j<norm.length;j++){var t=norm[j].t,v=norm[j].v;if(phase==='idle'){if(v>RT&&t-lastT>GAP){phase='rising';rS=t;pkV=v;pkT=t;}}else if(phase==='rising'){if(v>pkV){pkV=v;pkT=t;}if(v<FT&&t-rS>0.1)phase='falling';}else if(phase==='falling'){if(v<FT*0.6||(t-pkT)>0.8){var rd=pkT-rS,ang=(36+pkV*22).toFixed(1),q=parseFloat(ang)>44&&parseFloat(ang)<53?'good':parseFloat(ang)>40?'warn':'bad';shots.push({id:shots.length+1,t:pkT.toFixed(2),ang:ang,q:q,rd:Math.max(0.35,Math.min(1.2,rd)).toFixed(2)});renderLocalShot(shots[shots.length-1]);lastT=t;phase='cooldown';pS=t;}}else if(phase==='cooldown'){if(t-pS>GAP*0.6)phase='idle';}}S.shots=shots;setProgress(100);S.analyzing=false;document.getElementById('analyzingOverlay').classList.remove('on');document.getElementById('btnAnalyze').disabled=false;if(!shots.length){setStatus('SIN TIROS DETECTADOS',false);document.getElementById('shotLog').innerHTML='<div class="empty">No se detectaron tiros.</div>';}else{document.getElementById('mvShots').textContent=shots.length;document.getElementById('mcShots').classList.add('on');setStatus(shots.length+' TIRO(S) DETECTADO(S)',true);genInsight(shots);}await seekTo(0);ctx.drawImage(vid,0,0,canvas.width,canvas.height);}
+function renderLocalShot(sh){var log=document.getElementById('shotLog'),empty=log.querySelector('.empty');if(empty)empty.remove();var el=document.createElement('div');el.className='shot-entry';el.innerHTML='<div class="snum">#'+sh.id+'</div><div><div class="smain">'+S.playerName+' @ '+sh.t+'s</div><div class="smeta">ang '+sh.ang+'deg  rel '+sh.rd+'s</div></div><div class="sscore '+sh.q+'">'+sh.ang+'</div>';log.appendChild(el);log.scrollTop=log.scrollHeight;}
+function genInsight(shots){var angs=shots.map(function(s){return parseFloat(s.ang);}),avg=angs.reduce(function(a,b){return a+b;},0)/angs.length,vari=Math.max.apply(null,angs)-Math.min.apply(null,angs),txt;if(vari>8)txt=S.playerName+' variacion alta ('+Math.min.apply(null,angs).toFixed(1)+'-'+Math.max.apply(null,angs).toFixed(1)+'deg). Foco: consistencia.';else if(avg<42)txt='Angulo bajo ('+avg.toFixed(1)+'deg). Elevar punto de release.';else if(avg>52)txt='Angulo alto ('+avg.toFixed(1)+'deg). Ajustar flick de muneca.';else txt='Tiro consistente. Angulo promedio '+avg.toFixed(1)+'deg.';document.getElementById('insightText').textContent=txt;document.getElementById('insightBox').classList.add('on');document.getElementById('insightEmpty').style.display='none';}
+function setStatus(t,active){document.getElementById('statusText').textContent=t;document.getElementById('statusDot').className='dot'+(active?' on':'');}
+function setProgress(p){document.getElementById('progressFill').style.width=p+'%';document.getElementById('progressLabel').textContent=p+'%';}
+function resetAll(){stopLoop();lockUntil=0;G={y:0.5,t:0,vel:0,conf:0,isPeak:false};S={loaded:false,selMode:false,hasBbox:false,playerName:'Jugador',bbox:null,shots:[],signals:[],shotCount:0,analyzing:false,currentFile:null};document.getElementById('uploadPrompt').classList.remove('hidden');document.getElementById('bboxOverlay').classList.remove('on');document.getElementById('modeBanner').classList.remove('on');document.getElementById('analyzingOverlay').classList.remove('on');document.getElementById('canvasWrap').style.cursor='default';['btnSel','btnPlay','btnAnalyze'].forEach(function(id){document.getElementById(id).disabled=true;document.getElementById(id).classList.remove('active');});document.getElementById('btnPlay').innerHTML='&#9654; Play';document.getElementById('pEmoji').textContent='&#127936;';document.getElementById('pName').textContent='Sin seleccionar';document.getElementById('pSub').textContent='Carga video y tap en el jugador';document.getElementById('pSelBtn').textContent='TAP PARA SELECCIONAR';['mvAngle','mvTime'].forEach(function(id){document.getElementById(id).textContent='--';document.getElementById(id).className='mval';});document.getElementById('mvShots').textContent='0';document.getElementById('mvElbow').textContent='--';document.getElementById('shotLog').innerHTML='<div class="empty">Sin tiros detectados</div>';document.getElementById('insightBox').classList.remove('on');document.getElementById('insightEmpty').style.display='';document.getElementById('confFill').style.width='0%';document.getElementById('confPct').textContent='0%';document.getElementById('phaseLabel').textContent='';ctx.clearRect(0,0,canvas.width,canvas.height);sigCvs.width=sigCvs.offsetWidth;sigCtx.clearRect(0,0,sigCvs.width,sigCvs.height);setStatus('LISTO',false);setProgress(0);fileInp.value='';vid.onerror=vid.onloadedmetadata=vid.oncanplay=vid.onended=null;vid.removeAttribute('src');vid.load();}
+fetch(API+'/',{signal:AbortSignal.timeout(5000)}).then(function(r){return r.json();}).then(function(){document.getElementById('apiPill').textContent='API ok';document.getElementById('apiPill').style.color='#3DFF8F';document.getElementById('apiPill').style.borderColor='#3DFF8F';}).catch(function(){document.getElementById('apiPill').textContent='API offline';document.getElementById('apiPill').style.color='#7A6A4A';});
+window.addEventListener('resize',function(){sigCvs.width=sigCvs.offsetWidth;if(S.signals.length)drawSignal(S.signals);});
+setTimeout(function(){sigCvs.width=sigCvs.offsetWidth;},100);
+</script>
+</body>
+</html>
